@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>微信对话示例</title>
+    <script src="https://aka.ms/csspeech/jsbrowserpackageraw"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <script src="http://apps.bdimg.com/libs/jquery/1.9.1/jquery.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 0;
+        }
+
+        h1 {
+            text-align: center;
+            margin-top: 30px;
+            margin-bottom: 20px;
+        }
+
+        #chat-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #ffffff;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow-y: auto;
+            height: 700px;
+        }
+
+
+        .message {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 12px;
+            width: 100%;
+        }
+
+        .message.user {
+            justify-content: flex-start;
+        }
+
+        .message.assistant {
+            justify-content: flex-end;
+        }
+
+
+        .message img {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+        }
+
+        .message-content {
+            padding: 8px 16px;
+            border-radius: 12px;
+            margin-left: 10px;
+        }
+
+
+        .message.user .message-content {
+            background-color: #3f51b5;
+            color: #ffffff;
+            margin-left: 10px;
+        }
+
+        .message.assistant .message-content {
+            background-color: #e0e0e0;
+            color: #000000;
+            margin-right: 10px;
+        }
+
+        .translation {
+            font-size: 0.8rem;
+            margin-top: 2px;
+            color: #9e9e9e;
+        }
+
+        .message.user .translation {
+            text-align: right;
+        }
+
+        #controls {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 1em;
+            background-color: #1e90ff;
+            color: #ffffff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            background-color: #999;
+            cursor: not-allowed;
+        }
+
+        #api-settings {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #ffffff;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        #api-settings label {
+            font-size: 1em;
+            font-weight: bold;
+        }
+
+        #api-settings input {
+            padding: 10px;
+            font-size: 1em;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+
+        .message-content {
+            padding: 8px 16px;
+            border-radius: 12px;
+            margin-left: 10px;
+            max-width: 70%;
+        }
+
+
+    </style>
+</head>
+<body>
+<h1>ChatGPT对话助手</h1>
+<div id="chat-container">
+    <div class="message user">
+        <div class="message-content">
+        </div>
+    </div>
+    <div class="message assistant">
+        <div class="message-content">
+        </div>
+    </div>
+</div>
+<div id="api-settings">
+    <label for="speech-api-key">订阅密钥：</label>
+    <input id="speech-api-key" type="text" placeholder="输入订阅密钥">
+    <label for="chatgpt-api-key">ChatGPT API 密钥：</label>
+    <input id="chatgpt-api-key" type="text" placeholder="输入 ChatGPT API 密钥">
+    <label for="translate-api-key">翻译 API App ID：</label>
+    <input id="translate-app-id" type="text" placeholder="输入百度翻译 App ID">
+    <label for="translate-api-key">百度翻译 API 密钥：</label>
+    <input id="translate-api-key" type="text" placeholder="输入百度翻译 API 密钥">
+</div>
+<div id="controls">
+    <button id="start-dialogue" disabled>开始对话</button>
+</div>
+<script>
+    const startDialogueButton = document.getElementById("start-dialogue");
+    const speechApiKeyInput = document.getElementById("speech-api-key");
+    const chatGptApiKeyInput = document.getElementById("chatgpt-api-key");
+    const translateApiKeyInput = document.getElementById("translate-api-key");
+    const translateAppIdInput = document.getElementById("translate-app-id");
+
+    const SpeechSDK = window.SpeechSDK;
+
+
+    const chatContainer = document.getElementById('chat-container');
+    const sendBtn = document.getElementById('start-dialogue');
+
+    // 载入页面时检查本地存储中是否有聊天记录
+    function loadChatHistory() {
+        const chatHistory = localStorage.getItem('chatHistory');
+        if (chatHistory) {
+            chatContainer.innerHTML = chatHistory;
+        }
+    }
+
+    // 将新的聊天记录添加到本地存储
+    function saveChatHistory() {
+        localStorage.setItem('chatHistory', chatContainer.innerHTML);
+    }
+
+    // 清除本地存储（可选）
+    function clearChatHistory() {
+        localStorage.removeItem('chatHistory');
+    }
+
+
+    // 发送按钮事件监听
+    sendBtn.addEventListener('click', () => {
+        // 将新的聊天记录添加到本地存储
+        saveChatHistory();
+    });
+
+    // 页面关闭或刷新时清除聊天记录（可选）
+    // window.addEventListener('beforeunload', () => {
+    //     clearChatHistory();
+    // });
+
+
+    function saveChatHistory() {
+        const chatHistory = chatContainer.innerHTML;
+        localStorage.setItem("chatHistory", chatHistory);
+    }
+
+
+    async function requestApi(text) {
+        const apiUrl = "https://api.openai.com/v1/chat/completions";
+        const apiKey = chatGptApiKeyInput.value;
+
+        const response = await fetch(apiUrl, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model: "gpt-3.5-turbo",
+                messages: [{role: "user", content: text}],
+                temperature: 0.7,
+            }),
+        });
+
+        const responseData = await response.json();
+        return responseData.choices[0].message.content;
+    }
+
+    async function speechToText() {
+        const subscriptionKey = speechApiKeyInput.value;
+        const serviceRegion = "eastus";
+
+        return new Promise((resolve, reject) => {
+            const speechConfig = SpeechSDK.SpeechConfig.fromSubscription(subscriptionKey, serviceRegion);
+            const audioConfig = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
+            const recognizer = new SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
+
+            recognizer.recognizeOnceAsync(
+                (result) => {
+                    recognizer.close();
+                    resolve(result.text);
+                },
+                (err) => {
+                    recognizer.close();
+                    reject(err);
+                }
+            );
+        });
+    }
+
+    function textToSpeech(text) {
+        const subscriptionKey = speechApiKeyInput.value;
+        const serviceRegion = "eastus";
+
+        return new Promise((resolve, reject) => {
+            const speechConfig = SpeechSDK.SpeechConfig.fromSubscription(subscriptionKey, serviceRegion);
+            const synthesizer = new SpeechSDK.SpeechSynthesizer(speechConfig);
+
+            synthesizer.speakTextAsync(
+                text,
+                (result) => {
+                    synthesizer.close();
+                    resolve(result);
+                },
+                (err) => {
+                    synthesizer.close();
+                    reject(err);
+                }
+            );
+        });
+    }
+
+
+    async function translateText(text, toLang) {
+        try {
+            const appId = translateAppIdInput.value;
+            const appKey = translateApiKeyInput.value;
+            const salt = (new Date()).getTime();
+            const query = text;
+            const sign = CryptoJS.MD5(appId + query + salt + appKey).toString();
+
+            const response = await new Promise((resolve, reject) => {
+                $.ajax({
+                    url: "http://api.fanyi.baidu.com/api/trans/vip/translate",
+                    type: "get",
+                    dataType: "jsonp",
+                    data: {
+                        q: query,
+                        appid: appId,
+                        salt: salt,
+                        from: "en",
+                        to: "zh",
+                        sign: sign,
+                    },
+                    success: function (data) {
+                        resolve(data);
+                    },
+                    error: function (error) {
+                        reject(error);
+                    },
+                });
+            });
+
+            console.log(response);
+            console.log(response.trans_result[0].dst);
+            return response.trans_result[0].dst;
+        } catch (error) {
+            console.error("翻译过程中出现错误：", error);
+            return "";
+        }
+    }
+
+
+    function addMessage(role, text, translation) {
+        const chatContainer = document.getElementById("chat-container");
+        const messageElement = document.createElement("div");
+        messageElement.classList.add("message", role);
+
+        const avatarUrl = role === "user" ? "https://www.wangwangit.com/images/head/a.webp" : "https://raw.githubusercontent.com/Chanzhaoyu/chatgpt-web/main/public/favicon.ico"; // 替换为相应的头像 URL
+
+        if (translation) { // 检查翻译是否为空
+            if (role === "user") {
+                messageElement.innerHTML = `
+        <img src="${avatarUrl}" alt="${role === "user" ? "用户" : "助手"}">
+        <div class="message-content">
+            <p>${text}</p>
+                         ${translation !== null ? `<p>${translation}</p>` : ""}
+        </div>
+    `;
+            } else {
+                messageElement.innerHTML = `
+        <div class="message-content">
+            <p>${text}</p>
+                                 ${translation !== null ? `<p>${translation}</p>` : ""}
+        </div>
+
+        <img src="${avatarUrl}" alt="${role === "user" ? "用户" : "助手"}">
+    `;
+            }
+        } else {
+
+            if (role === "user") {
+                messageElement.innerHTML = `
+        <img src="${avatarUrl}" alt="${role === "user" ? "用户" : "助手"}">
+        <div class="message-content">
+            <p>${text}</p>
+
+        </div>
+    `;
+            } else {
+                messageElement.innerHTML = `
+        <div class="message-content">
+            <p>${text}</p>
+
+        </div>
+        <img src="${avatarUrl}" alt="${role === "user" ? "用户" : "助手"}">
+    `;
+            }
+        }
+
+
+        chatContainer.appendChild(messageElement);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+
+        // 在将消息添加到聊天界面后，保存聊天记录
+        saveChatHistory();
+    }
+
+
+    async function splitAndTranslateText(text, targetLang) {
+        const sentences = text.split('.').filter(sentence => sentence.trim() !== '');
+        const translatedSentences = await Promise.all(sentences.map(sentence => translateText(sentence.trim(), targetLang)));
+        return translatedSentences.join('。');
+    }
+
+
+    async function startDialogue() {
+        try {
+            startDialogueButton.disabled = true;
+
+            // 语音转文字
+            const inputText = await speechToText();
+            // 翻译响应文本
+            const userTranslateText = await translateText(inputText, "zh");
+            console.info("User input:", inputText, userTranslateText)
+            addMessage("user", inputText, userTranslateText);
+
+            // 请求 ChatGPT API
+            const responseText = await requestApi(inputText);
+
+            // 文字转语音
+            await textToSpeech(responseText);
+
+            // 翻译响应文本
+            const translatedResponse = await splitAndTranslateText(responseText, "zh");
+            addMessage("assistant", responseText, translatedResponse);
+
+        } catch (error) {
+            console.error("Error during dialogue:", error);
+        } finally {
+            startDialogueButton.disabled = false;
+        }
+    }
+
+    function checkApiKeys() {
+        if (speechApiKeyInput.value && chatGptApiKeyInput.value && translateApiKeyInput.value) {
+            startDialogueButton.disabled = false;
+        } else {
+            startDialogueButton.disabled = true;
+        }
+    }
+
+    if (SpeechSDK) {
+        speechApiKeyInput.addEventListener("input", checkApiKeys);
+        chatGptApiKeyInput.addEventListener("input", checkApiKeys);
+        translateApiKeyInput.addEventListener("input", checkApiKeys);
+        startDialogueButton.addEventListener("click", startDialogue);
+    } else {
+        console.error("Speech SDK not found.");
+    }
+
+
+    function saveInputValues() {
+        localStorage.setItem("speechApiKey", speechApiKeyInput.value);
+        localStorage.setItem("chatGptApiKey", chatGptApiKeyInput.value);
+        localStorage.setItem("translateApiKey", translateApiKeyInput.value);
+        localStorage.setItem("translateAppId", translateAppIdInput.value);
+    }
+
+    function loadInputValues() {
+        speechApiKeyInput.value = localStorage.getItem("speechApiKey") || "";
+        chatGptApiKeyInput.value = localStorage.getItem("chatGptApiKey") || "";
+        translateApiKeyInput.value = localStorage.getItem("translateApiKey") || "";
+        translateAppIdInput.value = localStorage.getItem("translateAppId") || "";
+        chatContainer.innerHTML = localStorage.getItem("chatHistory") || "";
+        startDialogueButton.disabled = false;
+        // 页面加载时显示聊天记录
+        loadChatHistory();
+    }
+
+    speechApiKeyInput.addEventListener("input", () => {
+        saveInputValues();
+        checkApiKeys();
+    });
+    chatGptApiKeyInput.addEventListener("input", () => {
+        saveInputValues();
+        checkApiKeys();
+    });
+    translateApiKeyInput.addEventListener("input", () => {
+        saveInputValues();
+        checkApiKeys();
+    });
+    translateAppIdInput.addEventListener("input", () => {
+        saveInputValues();
+        checkApiKeys();
+    });
+
+
+    loadInputValues();
+</script>
+</body>
+</html>
